@@ -1,0 +1,632 @@
+---
+title: "Foetal Health Analysis"
+author: "Esther Waweru / Miriam Onyango"
+date: "`r Sys.Date()`"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Introduction
+
+Fetal health classification is a crucial area of medical research, aimed at early detection of potential health risks during pregnancy. The fetal period is a critical stage of development, where complications such as fetal distress, congenital abnormalities, or other health conditions can have long-lasting impacts on both the mother and child. Monitoring fetal health through various medical techniques—such as cardiotocography (CTG), ultrasound, and other diagnostic tests—enables healthcare providers to intervene early, ensuring better outcomes for both the fetus and mother.
+
+Using features extracted from Cardiotocogram exams, this project focuses on using advanced machine learning techniques to classify fetal health as either, Normal,Suspect or Pathological.
+
+## Problem Definition
+
+Our Task is to :
+
+1.  Conduct an in-depth analysis of vital fetal indicators, focusing on various features and their interconnected relationships.
+
+2.  Classify fetal health to prevent child and maternal mortality (build a predictive model to classify the observations into their respective fetal health category, i.e., Normal or Suspect or Pathological).
+
+## Metrics of Success
+
+The success of the fetal health classification model will be measured using various performance metrics such as accuracy, precision, confusion matrix.
+
+## Data Description
+
+The attached dataset consists of measurements of fetal heart rate (FHR) and uterine contraction (UC) features on CTGs classified by expert obstetricians. There are a total of 22 Variables in the fetal health dataset. Predictor variables are 21 (20 numeric and 1 categorical). The response variable (fetal_health) has 3 categories: Normal, Suspect and Pathological.
+
+**Features**:
+
+-   baseline value - Baseline Fetal Heart Rate (FHR) (beats per minute)
+-   accelerations - Number of accelerations per second
+-   fetal_movement - Number of fetal movements per second
+-   uterine_contractions - Number of uterine contractions per second
+-   light_decelerations - Number of light decelerations per second
+-   severe_decelerations - Number of severe decelerations per second
+-   prolongued_decelerations - Number of prolonged decelerations per second
+-   abnormal_short_term_variability - Percentage of time with abnormal short-term variability
+-   mean_value_of_short_term_variability - Mean value of short-term variability
+-   percentage_of_time_with_abnormal_long_term_variability - Percentage of time with abnormal long-term variability
+-   mean_value_of_long_term_variability - Mean value of long-term variability
+-   histogram_width - Width of FHR histogram (generated from exam)
+-   histogram_min - Minimum of FHR histogram (generated from exam)
+-   histogram_max - Maximum of FHR histogram (generated from exam)
+-   histogram_number_of_peaks - Number of FHR histogram peaks (generated from exam)
+-   histogram_number_of_zeroes - Number of FHR histogram zeroes (generated from exam)
+-   histogram_mode - Mode of FHR histogram (generated from exam)
+-   histogram_mean - Mean of FHR histogram (generated from exam)
+-   histogram_median - Median of FHR histogram (generated from exam)
+-   histogram_variance - Variance of FHR histogram (generated from exam)
+-   histogram_tendency - Tendency of FHR histogram (generated from exam)
+
+**Target**:
+
+-   fetal_health - Fetal health as assessed by expert obstetrician. 1 - Normal, 2 - Suspect, 3 - Pathological
+
+### Import libraries and Load data
+
+```{r}
+#import and load libraries
+library(tidyverse)
+library(ggplot2)
+library(corrplot)
+library(caTools)
+library(caret)
+library(GGally)
+library(smotefamily)
+
+```
+
+```{r}
+#load dataset
+setwd('C://Users//pc//Documents//Project//Foetal')
+
+data <- read.csv('foetal_health_data.csv')
+head(data)
+```
+
+```{r}
+#Shape of our data
+dim(data)
+```
+
+Our data has 2126 rows and 22 columns.
+
+```{r}
+#check missing values
+sum(is.na(data))
+```
+
+Our data has no missing values.
+
+```{r}
+#check data type
+
+str(data)
+```
+
+The variables are mainly numerical. We will change fetal_movement data type to factor.
+
+```{r}
+#Change fetal_health data type to factor
+data$fetal_health <- as.factor(data$fetal_health)
+str(data)
+```
+
+```{r}
+#duplicated values
+
+sum(duplicated(data))
+```
+
+Our data has 13 duplicated rows.
+
+```{r}
+#Check rows duplicated
+duplicates <- data[duplicated(data), ]
+duplicates
+```
+
+```{r}
+#Remove duplicated rows
+data_2 <- unique(data)
+sum(duplicated(data_2))
+```
+
+```{r}
+#Check for outliers
+
+
+# Create boxplots for each variable in the dataset
+cols <- colnames(data_2[-22])
+
+for(i in 1 : length(cols)) {
+  boxplot(data_2[,i], main = cols[i],
+          xlab = cols[i])
+}
+
+
+```
+
+From the boxplot,
+
+-   All variables have outliers except for baseline_value, abnormal_short_term_variability, histogram_width,histogram_min and histogram_tendency.
+
+-   The variables fetal_movement, severe_decelerations, prolongued_decelerations and histogram_number_of_zeroes appear to have a tight spread meaning data is more concentrated around the median.
+
+-   Some of the variables appear to be skewed like accelerations,uterine_contractions,light_decelerations,
+mean_value_of_short_term_variability,
+percentage_of_time_with_abnormal_long_term_variability 
+and histogram_variance.
+
+Since measurements are from a cardiotocogram which is a precise medical equipment, outliers are legitimate measurements and not erroneous. Hence we retain.
+
+```{r}
+colnames(data_2)
+```
+
+```{r}
+summary(data_2)
+```
+
+
+
+## EDA
+
+1.  **Numerical Variables**
+
+```{r}
+#Non-histogram features
+
+cols1 <- colnames(data_2[1:11])
+
+for(i in 1 : length(cols1)){
+  hist(data_2[,i], main = cols1[i], xlab = cols1[i], col = 'blue')
+}
+
+```
+
+1.  Baseline_value appears to be almost normally distributed.
+2.  Most of the variables like acceleration, light_decelaration , uterine_contractions are right skewed, meaning most of the values of the variables are concentrated on the lower end, and fewer values are at the higher end.
+
+```{r}
+#Histogram features
+cols2 <- colnames(data[12:21])
+
+for(i in 1 : length(cols2)){
+  hist(data_2[,i], main = cols2[i], xlab = cols2[i], col = 'blue')
+}
+
+
+```
+
+Most of the variables are right skewed except histogram_width which appears normally distributed and histogram_median which shows a somewhat bimodal distribution, with most values concentrated between 20 and 70, peaking near 60. There are fewer extreme values beyond this central range.
+
+
+2. **Target Variable - Fetal Movement**
+
+```{r}
+
+ggplot(data_2, aes(x = fetal_health)) +
+  geom_bar(fill = 'blue') +
+  geom_text(stat = "count", aes(label = ..count..), vjust = -0.5) +
+  labs(title = "Count Plot", x = "Status", y = "Count")
+```
+
+
+Our data is highly imbalanced with most of our subject's having the fetal_health status as Normal.
+
+3.  **Numerical Variables vs Fetal_Health**
+
+*  Non-histogram Features
+
+```{r}
+#Non-histogram Features
+
+for(i in 1 : length(cols1)){
+    plot <- ggplot(data_2, aes_string(x = cols1[i], fill = "fetal_health")) +
+    geom_bar() +
+    ggtitle(cols1[i])
+    
+    print(plot)
+  #hist(data_2[,i], main = cols1[i], xlab = cols1[i], col = 'blue')
+}
+```
+
+There are clear differences across the different status of fetal health. Majority of the values fall within the 'Normal' status.
+
+Skewness is common across features, particularly for accelerations and light_decelerations, though level of skewness tends to vary by status within features.
+
+*  Histogram features
+
+```{r}
+for(i in 1 : length(cols2)){
+    plot2 <- ggplot(data_2, aes_string(x = cols2[i], fill = "fetal_health")) +
+    geom_bar() +
+    ggtitle(cols2[i])
+    
+    print(plot2)
+  #hist(data_2[,i], main = cols1[i], xlab = cols1[i], col = 'blue')
+}
+```
+
+
+The three measure of central tendency features(mean,mode,median) show different distributions across classes of fetal_health, but those distributions are similar regardless of measure. 
+
+
+There is less skewness among this set of features, though it is still present and is substantial for histogram_number_of_peaks, histogram_variance, and histogram_number_of_zeroes.  
+
+**Correlation of Features**
+
+```{r}
+par(mar = c(1, 1, 1, 1))
+
+corrplot(cor(data_2 %>%
+              dplyr::select(-fetal_health)),
+              col = colorRampPalette(c("red", "white", "blue"))(200),
+              tl.srt = 45,tl.cex = 0.6)
+```
+
+
+There is high correlation between baseline_value and histogram_mode,histogram_mean,histogram_median; between histogram_mean and histogram_mode and between histogram_median and histogram_mean,histogram_mode.
+
+
+
+```{r}
+#When foetal health is Normal
+par(mar = c(1, 1, 1, 1))
+
+corrplot(cor(data_2 %>%
+               filter(fetal_health == 1) %>%
+               dplyr::select(-fetal_health)),
+               col = colorRampPalette(c("red",   "white", "blue"))(200),
+               tl.srt = 45,tl.cex = 0.6)
+               
+```
+
+The heat map for fetal_health status 'Normal' shares similar pattern with one that includes all status. This is understandable since majority of our values are of 'Normal' status.
+
+```{r}
+#When foetal health is Suspect
+par(mar = c(1, 1, 1, 1))
+
+corrplot(cor(data_2 %>%
+               filter(fetal_health == 2) %>%
+               dplyr::select(-fetal_health)),
+               col = colorRampPalette(c("red", "white", "blue"))(200),
+               tl.srt = 45,tl.cex = 0.6)
+```
+
+The question marks for severe_decelerations indicate that there are zero values for that feature for this class.
+
+
+Compared to the fetal_heath 'Normal', there are stronger relationships between the histogram and non-histogram features.
+
+
+```{r}
+#When foetal health is Pathological
+par(mar = c(1, 1, 1, 1))
+
+corrplot(cor(data_2 %>%
+               filter(fetal_health == 3) %>%
+               dplyr::select(-fetal_health)),
+               col = colorRampPalette(c("red", "white", "blue"))(200),
+               tl.srt = 45,tl.cex = 0.6)
+```
+
+'Pathological' status shows even stronger correlations, both positive and negative.
+
+However, the variables  baseline_value,accelerations,fetal_movement, severe_decelerations,
+mean_value_of_long_term_variability 
+and histogram_number_of_zeroes show relatively weaker correlations.
+
+
+## Feature Selection
+
+
+Process to select the relevant and useful variables for predicted model. 
+
+```{r}
+#Use RFE (Recursive Feature Elimination)
+
+set.seed(123)
+
+# define the control using a random forest selection function
+control <- rfeControl(functions=rfFuncs, method="cv", number=10)
+
+# run the RFE algorithm
+results <- rfe(data_2[,1:21], data_2[,22], sizes=c(1:8), rfeControl=control)
+
+# plot the results
+plot(results, type=c("g", "o"))
+```
+
+
+
+```{r}
+# Display the selected features
+selected_features <- predictors(results)
+print(selected_features)
+```
+
+```{r}
+# Subset the original data with the selected features
+f_data <- data_2[,c(selected_features,"fetal_health")]
+head(f_data)
+
+```
+
+```{r}
+nrow(f_data)
+```
+
+```{r}
+str(f_data)
+```
+```{r}
+#write.csv(f_data,"C://Users//pc//Documents//Project//Foetal//fdata.csv", row.names = T)
+```
+
+
+## Dealing with imbalanced data
+
+**SMOTE(Synthetic Minority Oversampling Technique)**
+
+Involves creating new dataset by oversampling observations from minority class.
+
+
+```{r}
+# Separate the majority class (class 1) and the minority classes (class 2 and 3)
+majority_class <- subset(f_data, fetal_health == '1')
+minority_class_2 <- subset(f_data, fetal_health == '2')
+minority_class_3 <- subset(f_data, fetal_health == '3')
+```
+
+
+```{r}
+#Split data into train and Test set
+#For normal class
+
+set.seed(1)
+
+indexesN <- sample(1:nrow(majority_class), size = 0.2*nrow(majority_class)) 
+testN<- majority_class[indexesN,]
+trainN<- majority_class[-indexesN,]
+testN.Y<- majority_class$fetal_health [indexesN]
+trainN.Y<- majority_class$fetal_health [-indexesN]
+
+#For Suspect class
+set.seed(1)
+
+indexesS <- sample(1:nrow(minority_class_2), size = 0.2*nrow(minority_class_2)) 
+testS<- minority_class_2[indexesS,]
+trainS<- minority_class_2[-indexesS,]
+testS.Y<- minority_class_2$fetal_health [indexesS]
+trainS.Y<- minority_class_2$fetal_health [-indexesS]
+
+#For Pathological class
+set.seed(1)
+
+indexesP <- sample(1:nrow(minority_class_3), size = 0.2*nrow(minority_class_3)) 
+testP<- minority_class_3[indexesP,]
+trainP<- minority_class_3[-indexesP,]
+testP.Y<- minority_class_3$fetal_health [indexesP]
+trainP.Y<- minority_class_3$fetal_health [-indexesP]
+
+#create TESTSET and TRAINSET set
+test<- rbind(testN,testS,testP)
+train <- rbind(trainN,trainS,trainP)
+```
+
+```{r}
+dim(test)
+dim(train)
+```
+
+```{r}
+unique(train$fetal_health)
+```
+
+*  **Train data**
+
+```{r}
+#balancing class using SMOTE for TRAINSET
+library(smotefamily)
+set.seed(123)
+
+#oversampling class S = 2
+
+for (i in 1:nrow(train)){
+  train$sus[i] <- ifelse(train$fetal_health[i] == 2,2,0)
+}
+train.2 <- train[,-8] 
+
+smote_result22 = SMOTE(train.2[,-8],target = train.2$sus, K = 3, dup_size = 3)
+
+oversampled22 = smote_result22$data
+
+
+library(dplyr)
+BS2<- filter(oversampled22, oversampled22$class == 2)
+BS2$fetal_health <- BS2$class
+BS2 <- BS2[-8]
+nrow(BS2)
+str(BS2)
+```
+
+
+
+```{r}
+#oversampling class P = 3  
+set.seed(123)
+for (i in 1:nrow(train)){
+  train$path[i] <- ifelse(train$fetal_health[i] == '3','3',0)
+}
+train.3<- train[, -c(8,9)]
+smote_result33 = SMOTE(train.3[,- 8],target = train.3$path, K = 4, dup_size = 4)
+
+oversampled33 = smote_result33$data
+BP3 <- filter(oversampled33, oversampled33$class == 3)
+BP3$fetal_health <- BP3$class
+BP3 <- BP3[-8]
+nrow(BP3)
+str(BP3)
+```
+
+```{r}
+dim(trainN)
+str(trainN)
+
+```
+
+
+```{r}
+#create NEWTRAIN SET 
+newTR.df <- rbind(trainN,BS2,BP3)
+newTR <- newTR.df[,-8]
+newTR.LABEL <- newTR.df$fetal_health
+unique(newTR.LABEL)
+```
+```{r}
+dim(newTR)
+```
+
+*  **Test data**
+
+```{r}
+set.seed(123)
+
+#oversampling class S = 2
+
+for (i in 1:nrow(test)){
+  test$sus[i] <- ifelse(test$fetal_health[i] == 2,2,0)
+}
+test.2 <- test[,-8] 
+
+smote_result_2 = SMOTE(test.2[,-8],target = test.2$sus, K = 3, dup_size = 3)
+
+oversampled_2 = smote_result_2$data
+
+
+library(dplyr)
+TS2<- filter(oversampled_2, oversampled_2$class == 2)
+TS2$fetal_health <- TS2$class
+TS2 <- TS2[-8]
+nrow(TS2)
+str(TS2)
+```
+
+```{r}
+#oversampling class P = 3  
+set.seed(123)
+for (i in 1:nrow(test)){
+  test$path[i] <- ifelse(test$fetal_health[i] == '3','3',0)
+}
+test.3<- train[, -c(8,9)]
+smote_result_3 = SMOTE(test.3[,- 8],target = test.3$path, K = 4, dup_size = 4)
+
+oversampled_3 = smote_result_3$data
+TP3 <- filter(oversampled_3, oversampled_3$class == 3)
+TP3$fetal_health <- TP3$class
+TP3 <- TP3[-8]
+nrow(TP3)
+str(TP3)
+```
+
+
+```{r}
+#create NEWTRAIN SET 
+newTS.df <- rbind(testN,TS2,TP3)
+newTS <- newTS.df[,-8]
+newTS.LABEL <- newTS.df$fetal_health
+unique(newTS.LABEL)
+```
+
+
+```{r}
+dim(newTS)
+```
+
+
+## Model Building
+
+```{r}
+#scale data
+s_train <- as.data.frame(scale(newTR))
+train_s <- cbind(s_train, fetal_health = newTR.df$fetal_health)
+
+s_test <- as.data.frame(scale(newTS))
+test_s <- cbind(s_test, fetal_health = newTS.df$fetal_health)
+```
+
+
+
+1.  **Decision Tree**
+
+```{r}
+library(rpart)
+## Fit decision tree model
+model_tree <- rpart(fetal_health ~ ., data = train_s, method = "class")
+
+# Make predictions
+predictions_tree <- predict(model_tree, test_s, type = "class")
+
+# Evaluate the model
+caret::confusionMatrix(predictions_tree, as.factor(test_s$fetal_health))
+```
+
+*  The overall performance (accuracy of 64.16%) is moderate.
+*  The model is good at detecting class 1 and 2, but struggles with class 3 (lower sensitivity).
+*  Precision for class 1 is relatively low (many false positives), while class 3 has high precision but low sensitivity.
+
+
+2.  **Random Forest**
+
+```{r}
+# Install and load necessary packages
+
+library(randomForest)
+library(caret)
+
+# Fit random forest model
+model_rf <- randomForest(fetal_health ~ ., data = train_s, ntree = 100)
+
+# Make predictions
+predictions_rf <- predict(model_rf, test_s)
+
+# Evaluate the model
+confusionMatrix(predictions_rf, as.factor(test_s$fetal_health))
+
+```
+*  Overall Accuracy has improved to 73.99%
+
+*  The model shows strong results for class 1 and class 2, though it still struggles somewhat with class 3 in terms of sensitivity (ability to detect all class 3 instances).
+
+*  Precision is highest for class 3, which means when class 3 is predicted, it's usually correct.
+
+3.  **Support Vector Machine**
+
+```{r}
+# Install and load necessary packages
+#install.packages("e1071")
+library(e1071)
+library(caret)
+
+
+# Fit SVM model
+model_svm <- svm(fetal_health ~ ., data = train_s)
+
+# Make predictions
+predictions_svm <- predict(model_svm, test_s)
+
+# Evaluate the model
+confusionMatrix(predictions_svm, as.factor(test_s$fetal_health))
+```
+
+*  The overall accuracy of 73.2% remains strong, and the model continues to perform well in identifying class 1 and class 2.
+*  Class 3 sensitivity is still an area for improvement, though its precision is very high.
+*  Precision for class 2 is a bit low, indicating many predicted class 2 instances are misclassified from class 3.
+
+
+## Conclusion
+
+*  Random Forest is the best model for this classification task due to its high accuracy, balanced performance across all classes, and ability to generalize well on unseen data.
+
